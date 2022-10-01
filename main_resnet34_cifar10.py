@@ -132,32 +132,6 @@ def train_predict_save_per_epoch(cifar10_train, cifar10_test, epoches, checkpoin
     return model
 
 
-def calculate_influence(img_all_train, img_all_test, net):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss_fn = torch.nn.CrossEntropyLoss()
-    img_all_train = img_all_train.view(500, 1, 3, 224, 224)
-    img_all_test = img_all_test.view(100, 1, 3, 224, 224)
-    label_train = torch.zeros(1).long()
-    logits_train = net(img_all_train[0].to(device))
-    loss_train = loss_fn(logits_train, label_train.to(device))
-    grad_z_train = torch.autograd.grad(loss_train, net.parameters())
-    grad_z_train = get_gradient(grad_z_train, net)
-    score_list = []
-    time_start = time.perf_counter()
-    for i in range(10000):
-        label_test = torch.zeros(1).long()
-        label_test[0] = 0
-        logits_test = net(img_all_test[i].to(device))
-        loss_test = loss_fn(logits_test, label_test.to(device))
-        grad_z_test = torch.autograd.grad(loss_test, net.parameters())
-        grad_z_test = get_gradient(grad_z_test, net)
-        score = tracin_get(grad_z_test, grad_z_train)
-        score_list.append(float(score))
-        print(score)
-    print('%f s' % (time.perf_counter() - time_start))
-    print(score_list)
-
-
 def main():
     #   cifar10_train size: 50000        cifar10_test_size: 10000 
     #   torch.Size([32, 3, 32, 32])   torch.Size([32])   torch.Size([32, 3, 32, 32])   torch.Size([32])
@@ -177,10 +151,7 @@ def main():
     x, label, test_x, test_label, cifar10_train_dataloader, cifar10_test_dataloader = load_data(test_batch_size = 256, train_batch_size = 1280, download = True, category_num = 0, ret_custom_all_data=False, data_transform=data_transform)
 
     print(f"train shape: {x.shape} train label shape: {label.shape} test shape: {test_x.shape} test label shape: {test_label.shape}")
-    net = train_predict_save_per_epoch(cifar10_train_dataloader, cifar10_test_dataloader, epoches = 50, checkpoint_path="./resnet_cifar10_cpts/")
-    img_all_train, img_all_test = load_data(test_batch_size = 256, train_batch_size = 1280, category_num = 0, ret_custom_all_data = True, data_transform=data_transform)
-    calculate_influence(img_all_train, img_all_test, net)
-    
+    train_predict_save_per_epoch(cifar10_train_dataloader, cifar10_test_dataloader, epoches = 50, checkpoint_path="./resnet_cifar10_cpts/")
 
     '''
     img_all_train, img_all_test = load_data(test_batch_size = 1000, train_batch_size = 5000, category_num = 0)
