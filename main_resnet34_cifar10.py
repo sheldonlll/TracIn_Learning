@@ -1,11 +1,12 @@
 import datetime
+import time
 import torch
 from torchvision import datasets
 from torchvision.transforms import transforms
-from torch import _pin_memory, optim
+from torch import optim
 import os
-
-from urllib3 import Retry
+from matplotlib import pyplot as plt
+import numpy as np
 
 from mymodule.model import resnet34
 from mymodule.pif.influence_functions_new import get_gradient, tracin_get
@@ -55,7 +56,7 @@ def load_data(test_batch_size = 32, train_batch_size = 32, download = False, shu
         test_image, test_label = test_data_iter.next()
 
         img_all_test = torch.zeros(100, 3, 32, 32) # 存放test_image中所有标签是参数category_num的图片作为训练数据集
-        test_image_num = 0 # img_all_train数组的当前数量/下标，最多100张
+        test_image_num = 0 # img_all_train数组的当前 数量/下标，最多100张
 
         for i in range(test_batch_size):
             if (test_label[i] == category_num):
@@ -69,17 +70,19 @@ def load_data(test_batch_size = 32, train_batch_size = 32, download = False, shu
 
 
 def train_predict_save_per_epoch(cifar10_train, cifar10_test, epoches, checkpoint_path = "./resnet_cifar10_cpts/"):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = resnet34().to(device)
 
     criteon = torch.nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr = 1e-3)
-
+    loss_lst = []
+    acc_lst = []
+    tot_epoch = 0
     for epoch in range(epoches):
         model.train()
         loss = torch.tensor(-1.0)
         lossMIN = 0x3fff
-        launchTimestamp = datetime.datetime.now()
+        launchTimestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         for _batch_idx, (x, label) in enumerate(cifar10_train):
             x, label = x.to(device), label.to(device)
             try:
@@ -97,8 +100,8 @@ def train_predict_save_per_epoch(cifar10_train, cifar10_test, epoches, checkpoin
                 else:
                     raise exception
             
-
-        print(f"epoch: {epoch + 1}, loss: {loss.item()}")
+        loss_lst.append(lossMIN.cpu().detach().numpy())
+        print(f"epoch: {epoch + 1}, current epoch min loss: {lossMIN.item()}")
 
         model.eval()
         with torch.no_grad():
@@ -113,12 +116,21 @@ def train_predict_save_per_epoch(cifar10_train, cifar10_test, epoches, checkpoin
                 tot_num += x.shape[0]
             acc = tot_correct / tot_num
             print(f"epoch: {epoch + 1}, accuracy: {acc}")
-        
+        acc_lst.append(acc)
         torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_loss': lossMIN,
                             'optimizer': optimizer.state_dict()},
                            checkpoint_path + '/m-' + launchTimestamp + '-' + str("%.4f" % lossMIN) + '.pth.tar')
-
+        tot_epoch += 1
+    x_epoches = np.arange(tot_epoch)
+    loss_lst = np.array(loss_lst)
+    acc_lst = np.array(acc_lst)
+    plt.plot(x_epoches, loss_lst, label = "loss line")
+    plt.plot(x_epoches, acc_lst, label = "accuracy line")
+    plt.xlabel("epoch")
+    plt.legend()
+    plt.show()
     return model
+
 
 def calculate_influence(img_all_train, img_all_test, net):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -131,7 +143,6 @@ def calculate_influence(img_all_train, img_all_test, net):
     grad_z_train = torch.autograd.grad(loss_train, net.parameters())
     grad_z_train = get_gradient(grad_z_train, net)
     score_list = []
-    import time
     time_start = time.perf_counter()
     for i in range(10000):
         label_test = torch.zeros(1).long()
@@ -148,15 +159,26 @@ def calculate_influence(img_all_train, img_all_test, net):
 
 
 def main():
-    torch.cuda.empty_cache()
     #   cifar10_train size: 50000        cifar10_test_size: 10000 
     #   torch.Size([32, 3, 32, 32])   torch.Size([32])   torch.Size([32, 3, 32, 32])   torch.Size([32])
-    x, label, test_x, test_label, cifar10_train_dataloader, cifar10_test_dataloader = load_data(test_batch_size = 600, train_batch_size = 3000, category_num = 0, ret_custom_all_data=False)
-   
-    print(f"train shape: {x.shape} train label shape: {label.shape} test shape: {test_x.shape} test label shape: {test_label.shape}")
-    net = train_predict_save_per_epoch(cifar10_train_dataloader, cifar10_test_dataloader, 1000, checkpoint_path="./resnet_cifar10_cpts/")
+    torch.cuda.empty_cache()
+    data_transform = {
+            "train": transforms.Compose([transforms.Resize(256),
+                            transforms.CenterCrop(224), #TODO
+                            transforms.ToTensor(),# converts images loaded by Pillow into PyTorch tensors.
+                            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]),
 
-    img_all_train, img_all_test = load_data(test_batch_size = 600, train_batch_size = 3000, category_num = 0, ret_custom_all_data = True)
+            "val": transforms.Compose([transforms.Resize(256),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        } # transform incoming images into a Pytorch Tensor
+
+    x, label, test_x, test_label, cifar10_train_dataloader, cifar10_test_dataloader = load_data(test_batch_size = 256, train_batch_size = 1280, download = True, category_num = 0, ret_custom_all_data=False, data_transform=data_transform)
+
+    print(f"train shape: {x.shape} train label shape: {label.shape} test shape: {test_x.shape} test label shape: {test_label.shape}")
+    net = train_predict_save_per_epoch(cifar10_train_dataloader, cifar10_test_dataloader, epoches = 50, checkpoint_path="./resnet_cifar10_cpts/")
+    img_all_train, img_all_test = load_data(test_batch_size = 256, train_batch_size = 1280, category_num = 0, ret_custom_all_data = True, data_transform=data_transform)
     calculate_influence(img_all_train, img_all_test, net)
     
 
