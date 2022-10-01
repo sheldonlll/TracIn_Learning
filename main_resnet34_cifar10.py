@@ -9,7 +9,6 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 from mymodule.model import resnet34
-from mymodule.pif.influence_functions_new import get_gradient, tracin_get
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3"
 
