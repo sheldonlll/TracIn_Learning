@@ -8,8 +8,8 @@ from mymodule.data_get import dataset_category_get
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def calculate_tracin(file_name, learning_rate, batch_size):
-    model_weight_path = file_name
+def calculate_tracin(path, file_name, learning_rate, batch_size):
+    model_weight_path = path + file_name
     assert os.path.exists(model_weight_path), "file {} does not exist.".format(model_weight_path)
     
     net = resnet34()
@@ -62,7 +62,7 @@ def main():
     batch_size = 100
     path = "./resnet_cifar10_cpts/"
     for file in os.listdir(path):
-        current_epoch_score_list = calculate_tracin(file, learning_rate, batch_size)
+        current_epoch_score_list = calculate_tracin(path, file, learning_rate, batch_size)
         if len(score_final) == 0:
             score_final = current_epoch_score_list
         else:
